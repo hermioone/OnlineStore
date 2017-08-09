@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:aop="http://www.springframework.org/schema/aop"    
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+        http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-3.0.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.0.xsd
+        http://www.springframework.org/schema/tx 
+		http://www.springframework.org/schema/tx/spring-tx-3.0.xsd
+		http://www.springframework.org/schema/aop 
+		http://www.springframework.org/schema/aop/spring-aop-3.0.xsd ">
+	<!-- aop,tx是前缀，象征着后面的URL
+		http://www.springframework.org/schema/aop这个命名空间要去http://www.springframework.org/schema/aop/spring-aop-3.0.xsd下载
+	 -->
+	
+	<!--  扫描@Service，扫描controller包的这个配置一定要放在springmvc.xml中，扫描service包必须放在applicationContext-*.xml中  --> 
+	<context:component-scan base-package="cn.it.shop.service"/>
+	<context:component-scan base-package="cn.it.shop.util"/>
+    <!-- 
+    	1.搭建Spring的开发环境
+    		1.1: 添加配置文件和相应的spring-3.2-core.jar
+    		1.2: 创建Date对象，如果成功则Spring环境okay
+    			 <bean id="date" class="java.util.Date"></bean>
+    	2.搭载Hibernate的开发环境
+    		2.1: 添加配置文件，和相应的hibernate-3.6.jar
+    		2.2: 分析cn.it.shop.util中的HibernateSessionFactory
+    		2.3: 通过表逆向生成model、orm映射文件
+    		2.4: 创建service，通过new方式执行数据入库，在JEE6 library中会出现异常
+    			 org.hibernate.HibernateException: Unable to get the default Bean Validation factory
+    			  解决方案: 在hibernate.cfg.xml中添加<property name="javax.persistence.validation.mode">none</property>
+    	3.Spring与Hibernate整合(采用AOP来管理事务实现声明式事务)
+    		3.1: 添加: spring-3.2-aop, spring-3.2-persistence, c3p0
+    		3.2: 配置数据源
+    		3.3: 采用LocalSessionFactoryBean取代HibernateTemplate
+    		3.4： 配置事务管理器，管理SessionFactory，这样所有的session会有声明式事务
+    		3.5: 配置advice(通知)
+    		3.6： 配置AOP切面表达式
+    		3.7: 让Service交给Spring管理，并且依赖sessionFactory，如果能插入数据，说明声明式事务okay
+    	4.搭建springmvc环境
+     --> 
+     
+     
+    <!-- 所有的properties文件都应该交给Spring管理，而且在启动时候加载 
+    	 spring支持两种方式 : 	1.property-placeholder只能在xml中使用
+    	 				  	2.仅仅在xml中使用:PropertyPlaceholderHelper,public.properties中的filePath就不能在注解中使用
+    	 				  	      仅仅在注解中使用:PropertiesFactoryBean
+    	 				  	      
+	     <bean id="prop" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+	    	<property name="locations">
+	    		<array>
+	    			<value>classpath:conn.properties</value>
+	    			<value>classpath:public.properties</value>
+	    		</array>
+	    	</property>
+	    </bean>
+     -->
+    <bean id="prop" class="org.springframework.beans.factory.config.PropertiesFactoryBean">
+    	<property name="locations">
+    		<array>
+    			<value>classpath:public.properties</value>
+    			<value>classpath:pay.properties</value>
+    		</array>
+    	</property>
+    </bean>
+   	
+    <!--  <bean id="categoryService" class="cn.it.shop.service.impl.CategoryServiceImpl"></bean> -->
+	<context:property-placeholder location="classpath:conn.properties"/>    
+	<bean id="dataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource">
+	 	<property name="jdbcUrl" value="${jdbcUrl}" />
+	 	<property name="user" value="${user}" />
+	 	<property name="password" value="${password}" />
+	 	<property name="driverClass" value="${driverClass}" />
+	</bean>   
+	
+	<bean id="sessionFactory" class="org.springframework.orm.hibernate3.LocalSessionFactoryBean">
+	 	<property name="configLocation" value="classpath:hibernate.cfg.xml" />
+	 	<!-- 可以删除hiberbante 相关链接配置 -->
+	 	<property name="dataSource" ref="dataSource" />
+	</bean>  
+	
+	
+	<bean id="transactionManager" class="org.springframework.orm.hibernate3.HibernateTransactionManager">
+	 	<!--  创建事务管理器, 管理sessionFactory(因为所有的session都是从sessionFactory获取的) -->
+	 	<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+	
+	
+	<!-- 配置通知, 那些方法需要切入什么类型的事务 -->	 
+	<tx:advice id="advice" transaction-manager="transactionManager">
+	 	<tx:attributes>
+	 		<tx:method name="save*" propagation="REQUIRED"/>    <!-- REQUIRED:上下文有事务可以，如果没有事务就创建事务 -->
+	 		<tx:method name="update*" propagation="REQUIRED"/>
+	 		<tx:method name="delete*" propagation="REQUIRED"/>
+	 		<tx:method name="*" propagation="SUPPORTS" read-only="true"/>  <!-- SUPPOERTS:上下文有事务就有，没有也可以 -->
+	 	</tx:attributes>
+	</tx:advice>
+
+
+	<!-- 配置切面表达式, 通知+切面表达式才是完整的一 -->
+	<aop:config>
+	 	<!-- 表达式, 定义哪个包的哪些类需要切入事务,但是此处并且没有制定类中哪些方法,需要切入什么样 事务 -->
+	 	<aop:pointcut expression="execution(* cn.it.shop.service.impl.*.*(..))" id="pointcut" />
+	 	<aop:advisor advice-ref="advice" pointcut-ref="pointcut"/>
+	</aop:config>
+	
+        
+</beans>
