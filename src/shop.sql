@@ -1,3 +1,5 @@
+/*This is the tables and data of Mysql needed for this project*/
+
 /*删除商城数据库,如果存在*/
 drop database if exists shop;
 /*创建数据库,并设置编码*/
